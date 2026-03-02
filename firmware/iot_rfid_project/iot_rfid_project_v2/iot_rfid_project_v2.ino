@@ -264,7 +264,7 @@ void setup()
     Serial.println("\n\n");
     Serial.println("=====================================");
     Serial.println("  Smart-Pay RFID Module");
-    Serial.println("  Team: iot_shield_2026");
+    Serial.println("  Team: iot_team_07");
     Serial.println("=====================================\n");
 
     SPI.begin();

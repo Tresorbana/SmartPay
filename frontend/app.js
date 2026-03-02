@@ -1,11 +1,14 @@
 // ========================================
 // WEBSOCKET & STATE
 // ========================================
-const BACKEND_URL = `${location.protocol}//${location.hostname}:${location.port}`;
+const BACKEND_URL = location.protocol === 'file:'
+    ? 'http://localhost:9205'
+    : `${location.protocol}//${location.hostname}:${location.port}`;
 const socket = io(BACKEND_URL);
 
 // Global state
-let currentRole = 'admin'; // 'admin' or 'cashier'
+let currentUser = null;
+let currentRole = null;
 let lastScannedUid = null;
 let lastScannedBalance = null;
 let products = [];
@@ -13,7 +16,25 @@ let products = [];
 // ========================================
 // DOM ELEMENTS
 // ========================================
-// Shared
+// Authentication
+const loginModal = document.getElementById('login-modal');
+const loginUsername = document.getElementById('login-username');
+const loginPassword = document.getElementById('login-password');
+const loginBtn = document.getElementById('login-btn');
+const loginError = document.getElementById('login-error');
+const logoutBtn = document.getElementById('logout-btn');
+const mainContent = document.getElementById('main-content');
+const userDisplay = document.getElementById('user-display');
+const userNameText = document.getElementById('user-name');
+const roleIndicator = document.getElementById('role-indicator');
+
+// Navigation
+const adminNav = document.getElementById('admin-nav');
+const tabButtons = document.querySelectorAll('.tab-btn');
+const operationsView = document.getElementById('operations-view');
+const dashboardView = document.getElementById('dashboard-view');
+
+// Shared Card Display
 const cardVisual = document.getElementById('card-visual');
 const cardUidDisplay = document.getElementById('card-uid-display');
 const cardBalanceDisplay = document.getElementById('card-balance-display');
@@ -21,9 +42,7 @@ const statusDisplay = document.getElementById('status-display');
 const logList = document.getElementById('log-list');
 const connectionStatus = document.getElementById('connection-status');
 
-// Role selector
-const roleAdminBtn = document.getElementById('role-admin');
-const roleCashierBtn = document.getElementById('role-cashier');
+// Panels
 const adminPanel = document.getElementById('admin-panel');
 const cashierPanel = document.getElementById('cashier-panel');
 
@@ -43,327 +62,365 @@ const cashierTotalCost = document.getElementById('cashier-total-cost');
 const cashierPayBtn = document.getElementById('cashier-pay-btn');
 const cashierResponse = document.getElementById('cashier-response');
 
+// Dashboard Stats
+const statTotalTopup = document.getElementById('stat-total-topup');
+const statTotalSales = document.getElementById('stat-total-sales');
+const statActiveWallets = document.getElementById('stat-active-wallets');
+const statCountTopup = document.getElementById('stat-count-topup');
+const statCountSales = document.getElementById('stat-count-sales');
+const globalLogList = document.getElementById('global-log-list');
+
+// Receipt
+const receiptModal = document.getElementById('receipt-modal');
+const receiptContent = document.getElementById('receipt-content');
+const receiptDate = document.getElementById('receipt-date');
+const receiptBody = document.getElementById('receipt-body');
+const receiptTotalAmount = document.getElementById('receipt-total-amount');
+const receiptId = document.getElementById('receipt-id');
+const closeReceiptBtn = document.getElementById('close-receipt-btn');
+
 // ========================================
-// ROLE MANAGEMENT
+// AUTHENTICATION LOGIC
 // ========================================
-roleAdminBtn.addEventListener('click', () => {
-    currentRole = 'admin';
-    roleAdminBtn.classList.add('active');
-    roleCashierBtn.classList.remove('active');
-    adminPanel.style.display = 'block';
-    cashierPanel.style.display = 'none';
-    clearResponses();
-    addLog('Switched to Admin interface');
+loginBtn.addEventListener('click', async () => {
+    const username = loginUsername.value;
+    const password = loginPassword.value;
+
+    if (!username || !password) {
+        showLoginError('Please enter both username and password');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${BACKEND_URL}/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        const result = await response.json();
+        if (result.success) {
+            currentUser = result.name;
+            currentRole = result.role;
+            setupUIForRole();
+            loginModal.classList.add('hidden');
+            mainContent.classList.remove('hidden');
+            logoutBtn.classList.remove('hidden');
+            roleIndicator.classList.remove('hidden');
+            addLog(`Authenticated as ${currentUser} (${currentRole})`);
+        } else {
+            showLoginError(result.error);
+        }
+    } catch (error) {
+        showLoginError('Connection error: ' + error.message);
+    }
 });
 
-roleCashierBtn.addEventListener('click', () => {
-    currentRole = 'cashier';
-    roleCashierBtn.classList.add('active');
-    roleAdminBtn.classList.remove('active');
-    cashierPanel.style.display = 'block';
-    adminPanel.style.display = 'none';
-    clearResponses();
-    addLog('Switched to Cashier interface');
+logoutBtn.addEventListener('click', () => {
+    location.reload();
 });
+
+function showLoginError(msg) {
+    loginError.textContent = msg;
+    loginError.classList.remove('hidden');
+}
+
+function setupUIForRole() {
+    userNameText.textContent = currentUser;
+
+    if (currentRole === 'admin') {
+        adminPanel.style.display = 'block';
+        cashierPanel.style.display = 'none';
+        adminNav.classList.remove('hidden');
+    } else {
+        adminPanel.style.display = 'none';
+        cashierPanel.style.display = 'block';
+        adminNav.classList.add('hidden');
+    }
+}
+
+// ========================================
+// NAVIGATION LOGIC
+// ========================================
+tabButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+        const tab = btn.dataset.tab;
+
+        tabButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        if (tab === 'ops') {
+            operationsView.classList.remove('hidden');
+            dashboardView.classList.add('hidden');
+        } else {
+            operationsView.classList.add('hidden');
+            dashboardView.classList.remove('hidden');
+            fetchDashboardStats();
+        }
+    });
+});
+
+async function fetchDashboardStats() {
+    try {
+        const [statsRes, historyRes] = await Promise.all([
+            fetch(`${BACKEND_URL}/admin/stats`),
+            fetch(`${BACKEND_URL}/admin/all-transactions?limit=10`)
+        ]);
+
+        const statsData = await statsRes.json();
+        const historyData = await historyRes.json();
+
+        if (statsData.success) {
+            const s = statsData.stats;
+            statTotalTopup.textContent = `$${s.topup.total.toFixed(2)}`;
+            statTotalSales.textContent = `$${s.payment.total.toFixed(2)}`;
+            statActiveWallets.textContent = s.activeWallets;
+            statCountTopup.textContent = `${s.topup.count} TRANSACTIONS`;
+            statCountSales.textContent = `${s.payment.count} TRANSACTIONS`;
+        }
+
+        if (historyData.success) {
+            updateGlobalLog(historyData.transactions);
+        }
+    } catch (error) {
+        addLog('❌ Dashboard sync error: ' + error.message);
+    }
+}
+
+function updateGlobalLog(transactions) {
+    globalLogList.innerHTML = '';
+    if (transactions.length === 0) {
+        globalLogList.innerHTML = '<li class="status-placeholder">No transactions found</li>';
+        return;
+    }
+
+    transactions.forEach(tx => {
+        const li = document.createElement('li');
+        const color = tx.type === 'TOPUP' ? '#10b981' : '#ef4444';
+        const prefix = tx.type === 'TOPUP' ? '+' : '-';
+        li.innerHTML = `
+            <span style="flex: 1;">${tx.cardUid}</span>
+            <span style="flex: 1; font-weight: bold; color: ${color};">${prefix}$${tx.amount.toFixed(2)}</span>
+            <span style="flex: 2; font-size: 0.8rem; text-align: right;">${new Date(tx.createdAt).toLocaleString()}</span>
+        `;
+        globalLogList.appendChild(li);
+    });
+}
 
 // ========================================
 // WEBSOCKET EVENTS
 // ========================================
 socket.on('connect', () => {
-    addLog('✓ Connected to backend server');
+    addLog('✓ Connected to backend');
     connectionStatus.className = 'status-online';
-
-    // Request products on connect
     socket.emit('request-products');
 });
 
 socket.on('disconnect', () => {
-    addLog('✗ Disconnected from backend');
+    addLog('✗ Disconnected');
     connectionStatus.className = 'status-offline';
 });
 
-// Card scanned event
 socket.on('card-scanned', (data) => {
-    const { uid, deviceBalance } = data;
+    const { uid } = data;
     addLog(`🔍 Card detected: ${uid}`);
-
     lastScannedUid = uid;
 
-    // Update shared display
     cardVisual.classList.add('active');
     cardUidDisplay.textContent = uid;
-
-    // Update role-specific fields
     adminUid.value = uid;
-    adminTopupBtn.disabled = false;
-
     cashierUid.value = uid;
-    if (products.length > 0) {
-        cashierPayBtn.disabled = false;
-    }
 
-    // Fetch actual balance from database
+    adminTopupBtn.disabled = false;
+    if (products.length > 0) cashierPayBtn.disabled = false;
+
     socket.emit('request-balance', { uid });
 
     statusDisplay.innerHTML = `
-    <div class="data-row">
-      <span class="data-label">UID:</span>
-      <span class="data-value">${uid}</span>
-    </div>
-    <div class="data-row">
-      <span class="data-label">Balance:</span>
-      <span class="data-value" style="color: #10b981;">Fetching from database...</span>
-    </div>
-    <div class="data-row">
-      <span class="data-label">Status:</span>
-      <span class="data-value" style="color: #4ade80;">✓ Active</span>
-    </div>
-  `;
-
+        <div class="data-row">
+            <span class="data-label">UID:</span>
+            <span class="data-value">${uid}</span>
+        </div>
+        <div class="data-row">
+            <span class="data-label">Balance:</span>
+            <span class="data-value" style="color: #000;">Fetching...</span>
+        </div>
+        <div class="data-row">
+            <span class="data-label">Status:</span>
+            <span class="data-value" style="color: #000;">✓ Active</span>
+        </div>
+    `;
     clearResponses();
 });
 
-// Top-up success
 socket.on('topup-success', (data) => {
     const { uid, amount, newBalance } = data;
-    addLog(`✓ Top-up successful: +$${amount.toFixed(2)} | New balance: $${newBalance.toFixed(2)}`);
+    addLog(`✓ Top-up: +$${amount.toFixed(2)} | New: $${newBalance.toFixed(2)}`);
 
     if (uid === lastScannedUid) {
         lastScannedBalance = newBalance;
         cardBalanceDisplay.textContent = `$${newBalance.toFixed(2)}`;
         adminCurrentBalance.value = `$${newBalance.toFixed(2)}`;
 
-        cardVisual.style.transform = 'scale(1.05)';
+        cardVisual.style.transform = 'scale(1.1)';
         setTimeout(() => { cardVisual.style.transform = ''; }, 300);
     }
 
     adminResponse.className = 'response-message success';
-    adminResponse.innerHTML = `✓ Top-up Successful<br>+$${amount.toFixed(2)}<br>New Balance: $${newBalance.toFixed(2)}`;
+    adminResponse.innerHTML = `✓ Top-up Successful<br>+$${amount.toFixed(2)}`;
     adminAmount.value = '';
+
+    if (!dashboardView.classList.contains('hidden')) fetchDashboardStats();
 });
 
-// Payment success
 socket.on('payment-success', (data) => {
-    const { uid, amount, newBalance } = data;
-    addLog(`✓ Payment approved: -$${amount.toFixed(2)} | New balance: $${newBalance.toFixed(2)}`);
+    const { uid, amount, newBalance, productId, quantity } = data;
+    addLog(`✓ Payment: -$${amount.toFixed(2)} | New: $${newBalance.toFixed(2)}`);
 
     if (uid === lastScannedUid) {
         lastScannedBalance = newBalance;
         cardBalanceDisplay.textContent = `$${newBalance.toFixed(2)}`;
         cashierCurrentBalance.value = `$${newBalance.toFixed(2)}`;
 
-        cardVisual.style.transform = 'scale(1.05)';
+        cardVisual.style.transform = 'scale(1.1)';
         setTimeout(() => { cardVisual.style.transform = ''; }, 300);
     }
 
-    cashierResponse.className = 'response-message success';
-    cashierResponse.innerHTML = `✓ Payment Approved<br>-$${amount.toFixed(2)}<br>New Balance: $${newBalance.toFixed(2)}`;
-    cashierQuantity.value = '1';
-    cashierTotalCost.value = '$0.00';
+    const productName = products.find(p => p._id === productId)?.name || 'Unknown';
+    showReceipt({ uid, amount, productName, quantity });
+
+    if (!dashboardView.classList.contains('hidden')) fetchDashboardStats();
 });
 
-// Payment declined
 socket.on('payment-declined', (data) => {
-    const { uid, reason, required, available } = data;
-    addLog(`✗ Payment declined: ${reason}`);
-
+    const { reason } = data;
+    addLog(`✗ Declined: ${reason}`);
     cashierResponse.className = 'response-message error';
-    cashierResponse.innerHTML = `✗ Payment Declined<br>${reason}<br>Required: $${required.toFixed(2)} | Available: $${available.toFixed(2)}`;
+    cashierResponse.textContent = `✗ Declined: ${reason}`;
 });
 
-// Products received
+socket.on('balance-response', (data) => {
+    if (data.success && data.uid === lastScannedUid) {
+        const balance = data.balance || 0;
+        lastScannedBalance = balance;
+        cardBalanceDisplay.textContent = `$${balance.toFixed(2)}`;
+        adminCurrentBalance.value = `$${balance.toFixed(2)}`;
+        cashierCurrentBalance.value = `$${balance.toFixed(2)}`;
+
+        const balanceVal = statusDisplay.querySelector('.data-row:nth-child(2) .data-value');
+        if (balanceVal) balanceVal.textContent = `$${balance.toFixed(2)}`;
+    }
+});
+
 socket.on('products-response', (data) => {
     if (data.success) {
         products = data.products;
         populateProductList();
-        addLog(`✓ Loaded ${products.length} products`);
-    }
-});
-
-// Balance response - fetched from database
-socket.on('balance-response', (data) => {
-    if (data.success && data.uid === lastScannedUid) {
-        const balance = data.balance !== null ? data.balance : 0;
-        lastScannedBalance = balance;
-
-        // Update shared display
-        cardBalanceDisplay.textContent = `$${balance.toFixed(2)}`;
-
-        // Update admin panel
-        adminCurrentBalance.value = `$${balance.toFixed(2)}`;
-
-        // Update cashier panel
-        cashierCurrentBalance.value = `$${balance.toFixed(2)}`;
-
-        // Update status display
-        const statusRow = statusDisplay.querySelector('.data-row:nth-child(2)');
-        if (statusRow) {
-            statusRow.innerHTML = `
-      <span class="data-label">Balance:</span>
-      <span class="data-value" style="color: #10b981;">$${balance.toFixed(2)}</span>
-    `;
-        }
-
-        addLog(`📊 Balance loaded from DB: $${balance.toFixed(2)}`);
     }
 });
 
 // ========================================
-// ADMIN INTERFACE HANDLERS
+// CORE ACTIONS
 // ========================================
-adminAmount.addEventListener('input', () => {
-    if (lastScannedUid && adminAmount.value) {
-        adminTopupBtn.disabled = false;
-    } else {
-        adminTopupBtn.disabled = true;
-    }
-});
-
 adminTopupBtn.addEventListener('click', async () => {
     const amount = parseFloat(adminAmount.value);
-
-    if (!lastScannedUid || !amount || amount <= 0) {
-        adminResponse.className = 'response-message error';
-        adminResponse.textContent = '✗ Please enter a valid amount';
-        return;
-    }
+    if (!lastScannedUid || !amount || amount <= 0) return;
 
     try {
-        const response = await fetch(`${BACKEND_URL}/topup`, {
+        await fetch(`${BACKEND_URL}/topup`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                uid: lastScannedUid,
-                amount
-            })
+            body: JSON.stringify({ uid: lastScannedUid, amount })
         });
-
-        const result = await response.json();
-        if (!result.success) {
-            adminResponse.className = 'response-message error';
-            adminResponse.textContent = `✗ Error: ${result.error}`;
-            addLog(`❌ Top-up failed: ${result.error}`);
-        }
     } catch (error) {
-        adminResponse.className = 'response-message error';
-        adminResponse.textContent = `✗ Connection error: ${error.message}`;
-        addLog(`❌ Top-up connection error: ${error.message}`);
+        addLog(`❌ Error: ${error.message}`);
     }
 });
-
-// ========================================
-// CASHIER INTERFACE HANDLERS
-// ========================================
-function populateProductList() {
-    cashierProduct.innerHTML = '<option value="">-- Select Product --</option>';
-    products.forEach(product => {
-        const option = document.createElement('option');
-        option.value = product._id;
-        option.textContent = `${product.name} - $${product.price.toFixed(2)}`;
-        option.dataset.price = product.price;
-        cashierProduct.appendChild(option);
-    });
-}
-
-function calculateTotal() {
-    const productSelect = cashierProduct.options[cashierProduct.selectedIndex];
-    if (!productSelect.dataset.price) {
-        cashierTotalCost.value = '$0.00';
-        return 0;
-    }
-
-    const unitPrice = parseFloat(productSelect.dataset.price);
-    const quantity = parseInt(cashierQuantity.value) || 1;
-    const total = unitPrice * quantity;
-
-    cashierTotalCost.value = `$${total.toFixed(2)}`;
-    return total;
-}
-
-cashierProduct.addEventListener('change', () => {
-    calculateTotal();
-    updatePayButtonState();
-});
-
-cashierQuantity.addEventListener('change', () => {
-    calculateTotal();
-    updatePayButtonState();
-});
-
-function updatePayButtonState() {
-    const hasUid = !!lastScannedUid;
-    const hasProduct = cashierProduct.value !== '';
-    const hasQuantity = parseInt(cashierQuantity.value) > 0;
-
-    cashierPayBtn.disabled = !(hasUid && hasProduct && hasQuantity);
-}
 
 cashierPayBtn.addEventListener('click', async () => {
-    const productSelect = cashierProduct.options[cashierProduct.selectedIndex];
     const productId = cashierProduct.value;
     const quantity = parseInt(cashierQuantity.value);
     const totalAmount = parseFloat(cashierTotalCost.value.replace('$', ''));
 
-    if (!lastScannedUid || !productId || !quantity || totalAmount <= 0) {
-        cashierResponse.className = 'response-message error';
-        cashierResponse.textContent = '✗ Please fill all fields';
-        return;
-    }
+    if (!lastScannedUid || !productId || totalAmount <= 0) return;
 
     try {
-        const response = await fetch(`${BACKEND_URL}/pay`, {
+        await fetch(`${BACKEND_URL}/pay`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                uid: lastScannedUid,
-                productId,
-                quantity,
-                totalAmount
-            })
+            body: JSON.stringify({ uid: lastScannedUid, productId, quantity, totalAmount })
         });
-
-        const result = await response.json();
-        if (!result.success) {
-            cashierResponse.className = 'response-message error';
-            cashierResponse.innerHTML = `✗ ${result.reason || result.error}`;
-            addLog(`❌ Payment failed: ${result.reason || result.error}`);
-        }
     } catch (error) {
-        cashierResponse.className = 'response-message error';
-        cashierResponse.textContent = `✗ Connection error: ${error.message}`;
-        addLog(`❌ Payment connection error: ${error.message}`);
+        addLog(`❌ Error: ${error.message}`);
     }
 });
 
 // ========================================
-// UTILITY FUNCTIONS
+// RECEIPT LOGIC
 // ========================================
-function addLog(message) {
-    const li = document.createElement('li');
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString('en-US', {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-    });
-    li.textContent = `[${timeStr}] ${message}`;
-    logList.prepend(li);
+function showReceipt(data) {
+    receiptDate.textContent = new Date().toLocaleString();
+    receiptBody.innerHTML = `
+        <div class="receipt-item">
+            <span>Item:</span>
+            <span>${data.productName} (x${data.quantity})</span>
+        </div>
+        <div class="receipt-item">
+            <span>Card UID:</span>
+            <span>${data.uid}</span>
+        </div>
+    `;
+    receiptTotalAmount.textContent = `$${data.amount.toFixed(2)}`;
+    receiptId.textContent = 'TX-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
-    // Keep only last 30 logs
-    while (logList.children.length > 30) {
-        logList.removeChild(logList.lastChild);
+    receiptModal.classList.remove('hidden');
+}
+
+closeReceiptBtn.addEventListener('click', () => {
+    receiptModal.classList.add('hidden');
+    cashierQuantity.value = '1';
+    cashierTotalCost.value = '$0.00';
+    clearResponses();
+});
+
+// ========================================
+// UTILITIES
+// ========================================
+function populateProductList() {
+    cashierProduct.innerHTML = '<option value="">-- Select Product --</option>';
+    products.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p._id;
+        opt.textContent = `${p.name} - $${p.price.toFixed(2)}`;
+        opt.dataset.price = p.price;
+        cashierProduct.appendChild(opt);
+    });
+}
+
+function calculateTotal() {
+    const sel = cashierProduct.options[cashierProduct.selectedIndex];
+    if (!sel.dataset.price) {
+        cashierTotalCost.value = '$0.00';
+        return;
     }
+    const total = parseFloat(sel.dataset.price) * (parseInt(cashierQuantity.value) || 1);
+    cashierTotalCost.value = `$${total.toFixed(2)}`;
+}
+
+cashierProduct.addEventListener('change', calculateTotal);
+cashierQuantity.addEventListener('input', calculateTotal);
+
+function addLog(msg) {
+    const li = document.createElement('li');
+    const time = new Date().toLocaleTimeString([], { hour12: false });
+    li.textContent = `[${time}] ${msg}`;
+    logList.prepend(li);
+    if (logList.children.length > 20) logList.removeChild(logList.lastChild);
 }
 
 function clearResponses() {
-    adminResponse.className = 'response-message';
-    adminResponse.textContent = '';
-    cashierResponse.className = 'response-message';
-    cashierResponse.textContent = '';
+    adminResponse.innerHTML = '';
+    cashierResponse.innerHTML = '';
 }
 
-// ========================================
-// INITIALIZATION
-// ========================================
-addLog('Dashboard initialized');
+addLog('Ready for secure login');
