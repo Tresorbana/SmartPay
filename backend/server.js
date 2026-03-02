@@ -11,6 +11,8 @@ const {
   getWalletBalance,
   getTransactionHistory,
   getProducts,
+  getSystemStats,
+  getAllTransactions,
   seedProducts,
   closeDB
 } = require('./database');
@@ -27,9 +29,9 @@ app.use(express.json());
 // ========================================
 // CONFIGURATION
 // ========================================
-const PORT = process.env.PORT || 9209;
+const PORT = process.env.PORT || 9205;
 const TEAM_ID = "iot_team_07";
-const MQTT_BROKER = "mqtt://157.173.101.159:1883";
+const MQTT_BROKER = process.env.MQTT_BROKER || "mqtt://157.173.101.159:1883";
 
 // MQTT Topics
 const TOPICS = {
@@ -215,6 +217,50 @@ app.get('/balance/:uid', async (req, res) => {
       balance: wallet.balance,
       timestamp: new Date()
     });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /login
+ * Simple mock login for demonstration
+ */
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+
+  // Demo credentials
+  if (username === 'agent' && password === 'admin123') {
+    return res.json({ success: true, role: 'admin', name: 'System Agent' });
+  } else if (username === 'sales' && password === 'sales123') {
+    return res.json({ success: true, role: 'cashier', name: 'Salesperson' });
+  }
+
+  res.status(401).json({ success: false, error: 'Invalid credentials' });
+});
+
+/**
+ * GET /admin/stats
+ * Get system-wide statistics
+ */
+app.get('/admin/stats', async (req, res) => {
+  try {
+    const stats = await getSystemStats();
+    res.json({ success: true, stats });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /admin/all-transactions
+ * Get global transaction history
+ */
+app.get('/admin/all-transactions', async (req, res) => {
+  try {
+    const { limit } = req.query;
+    const transactions = await getAllTransactions(parseInt(limit) || 20);
+    res.json({ success: true, transactions });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
