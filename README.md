@@ -1,124 +1,71 @@
-# Smart-Pay RFID Wallet System
+# 🚗 Smart-Pay: Car Dealership Edition
 
-A complete RFID-based digital wallet system with real-time web dashboard, atomic database transactions, and edge device integration via MQTT.
+Welcome to **Smart-Pay**, a premium RFID-based wallet management system tailored for automotive service centers and car dealerships. This platform enables seamless, cashless transactions for vehicle maintenance, detailing, and rentals using secure RFID cards.
 
-## 🎯 System Overview
+## 🌐 Live Demonstration
+Access the system here: **[http://157.173.101.159:9205](http://157.173.101.159:9205)**
 
-Smart-Pay enables contactless payments and top-ups using RFID cards with a modern web dashboard supporting both Admin (top-up) and Cashier (payment) interfaces.
+---
 
-## 📋 Features Implemented
+## 🔑 Demo Credentials
 
-### 1. RFID Wallet System
-- **Unique Card UIDs**: Each RFID card has a unique identifier
-- **Balance Tracking**: Real-time wallet balance per card
-- **Atomic Transactions**: Top-up and payment operations are atomic
-- **Transaction Ledger**: Complete audit trail
+| Role | Username | Password | Access Level |
+| :--- | :--- | :--- | :--- |
+| **System Agent** | `agent` | `admin123` | Full Dashboard, Top-Ups, Global Logs |
+| **Salesperson** | `sales` | `sales123` | Payments, Receipts, Card Scans |
 
-### 2. Backend API (Express.js + MongoDB)
-- **POST /topup**: Add balance to a card
-- **POST /pay**: Deduct balance for payment
-- **GET /balance/:uid**: Check current balance
-- **GET /products**: Retrieve available products
-- **GET /transactions/:uid**: View transaction history
-
-### 3. Dashboard Features
-- **Dual Interface**: Admin (top-up) & Cashier (payment)
-- **Real-time WebSocket**: No polling - instant updates
-- **Auto-Detection**: RFID cards detected automatically
-- **Atomic Transactions**: MongoDB sessions ensure data integrity
-
-### 4. MongoDB Atlas Integration
-- **Atomic Operations**: Wallet update + transaction saved together
-- **4 Collections**: cards, wallets, products, transactions
-- **Immutable Ledger**: Prevents fraud and data corruption
-
-### 5. MQTT Communication
-- **Isolated Topics**: `rfid/iot_shield_2026/card/*`
-- **Device Commands**: Top-up and payment confirmations
-- **Health Monitoring**: Device status tracking
-
-## 🚀 Quick Setup
-
-### Backend
-```bash
-cd backend
-npm install
-NODE CONFIGURATION:
-- Update MONGODB_URI in database.js
-- Update MQTT_BROKER in server.js
-npm run dev
-# Runs on http://localhost:9201
-```
-
-### Frontend
-- Open http://localhost:9201
-- Switch between Admin and Cashier modes
-
-### ESP8266 Firmware
-1. Use firmware/iot_rfid_project/iot_rfid_project_v2.ino
-2. Update WiFi & MQTT settings
-3. Install: MFRC522, PubSubClient, ArduinoJson
-4. Upload to ESP8266
-
-### Hardware Wiring (ESP8266 + RC522)
-| RC522 | ESP8266 |
-|-------|---------|
-| 3.3V  | 3V3     |
-| GND   | GND     |
-| RST   | D3      |
-| SDA   | D4      |
-| MOSI  | D7      |
-| MISO  | D6      |
-| SCK   | D5      |
-
-## 💾 Database Schema
-
-**cards**: `{uid, owner, createdAt}`  
-**wallets**: `{cardUid, balance, updatedAt}`  
-**products**: `{name, price, active}`  
-**transactions**: `{cardUid, type, amount, previousBalance, newBalance, status, reason, createdAt}`
-
-## 🔌 MQTT Topics
-
-| Topic | Direction | Purpose |
-|-------|-----------|---------|
-| `card/status` | ESP→Backend | Card scan detection |
-| `card/topup` | Backend→ESP | Top-up commands |
-| `card/pay` | Backend→ESP | Payment confirmation |
-| `device/health` | ESP→Backend | Health metrics |
-| `device/status` | LWT | Online/offline |
+---
 
 ## ✨ Key Features
 
-✅ Atomic transactions (MongoDB sessions)  
-✅ Double-spend prevention  
-✅ Real-time WebSocket (no polling)  
-✅ Clean architecture separation  
-✅ Team isolation (MQTT namespacing)  
-✅ Immutable audit trail  
-✅ Dual dashboard roles  
+### 👤 Role-Based Management
+- **Agent Interface**: Manage wallet balances, monitor system-wide health, and access a consolidated manager dashboard.
+- **Salesperson Interface**: Process payments for services like oil changes, tire rotations, and detailing with one-click RFID validation.
 
-## 🛠 Project Structure
+### 📊 Consolidated Manager Dashboard
+- Real-time tracking of **Total Sales** and **Total Top-Ups**.
+- Monitoring of active cards in circulation.
+- Live global transaction feed.
 
-```
-Smart-pay/
-├── backend/
-│   ├── database.js
-│   ├── server.js
-│   └── package.json
-├── firmware/
-│   └── iot_rfid_project/
-│       └── iot_rfid_project_v2.ino
-├── frontend/
-│   ├── index.html
-│   ├── app.js
-│   └── style.css
-└── README.md
-```
+### 🧾 Automated Digital Receipts
+- Instant receipt generation after every successful payment.
+- Detailed breakdown of items, quantities, and remaining balance.
 
-## 📝 Team ID: iot_shield_2026
+### 📡 Integrated RFID Technology
+- **MQTT Protocol**: Real-time communication with physical IoT devices (ESP32/RFID-RC522).
+- **WebSockets**: Live UI updates when a card is scanned or a transaction is processed.
+- **Atomic Transactions**: MongoDB Atlas backed sessions ensure data integrity and prevent double-spending.
 
-**Status**: Production Ready | **Updated**: February 2026
+---
 
-### Live url
-**http://157.173.101.159:9201/**
+## 🛠️ Tech Stack
+
+- **Frontend**: Vanilla JS, Glassmorphism CSS, HTML5, Socket.io
+- **Backend**: Node.js, Express, MQTT.js
+- **Database**: MongoDB Atlas (Cloud)
+- **Communication**: WebSockets & MQTT
+
+---
+
+## 🚀 Local Development
+
+1. **Clone & Install**:
+   ```powershell
+   npm install
+   ```
+2. **Environment Setup**:
+   Configure `.env` in the `backend` folder with your MongoDB URI and MQTT Broker details.
+3. **Database Seed**:
+   ```powershell
+   cd backend
+   node reset_products.js
+   ```
+4. **Start Server**:
+   ```powershell
+   node server.js
+   ```
+
+---
+
+## 🛡️ Team
+Developed by **iot_team_07** (Smart-Pay Implementation Group).
